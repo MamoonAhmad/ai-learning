@@ -2,6 +2,7 @@
 from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage
 from src.models import get_chat_model
+from src.nodes.agent_state import AgentState
 
 # Load environment variables
 _ = load_dotenv()
@@ -9,7 +10,7 @@ _ = load_dotenv()
 model = get_chat_model()
 
 GENERAL_CONTEXT_PROMPT = """
-    You are a smart interview answer analyzer whose job is analyze the response the user and tell
+    You are a smart interview answer analyzer whose job is analyze the latest response from the user and tell
     whether the response from the user is related to a question or not.
     User will be presented with an interview question. User can ask question in response and answer the 
     question. Your job is just to check whether the response from the question is related to that particular
@@ -52,7 +53,7 @@ GENERAL_CONTEXT_PROMPT = """
 """
 
 
-def general_context_node(original_question: str, user_response: str):
+def general_context_node(state: AgentState):
     """
         Responsible for making sure response from the user is within the context 
         and is safe to move forward in the node chain.
@@ -60,21 +61,17 @@ def general_context_node(original_question: str, user_response: str):
         Returns True if the response is relevant.
     """
 
-    if not original_question or len(original_question) == 0:
-        raise Exception("Invalid question.")
-
-    if not user_response or len(user_response) == 0:
-        raise Exception("Invalid user response.")
-
     messages = [
-        SystemMessage(GENERAL_CONTEXT_PROMPT),
-        f"""
-            Original Question: {original_question}
-            User Response: {user_response}
-        """
-    ]
+        SystemMessage(GENERAL_CONTEXT_PROMPT)
+    ] + state["conversation"]
 
     response = model.invoke(messages)
     analysis = str(response.content).strip()
 
-    return analysis == "Yes" or analysis == "yes"
+    is_out_of_context = 0 if analysis == "Yes" or analysis == "yes" else 1
+
+    return dict(
+        out_of_context_question_counter=state["out_of_context_question_counter"] +
+        is_out_of_context,
+        last_message_was_out_of_context=bool(is_out_of_context)
+    )
